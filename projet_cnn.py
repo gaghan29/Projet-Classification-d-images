@@ -1,3 +1,7 @@
+from dataset import MelonaDataset
+#from transforms import transform_base, transform_normalise, MEAN, STD
+from model import SimpleCNN, compter_parametres
+from train import train_one_epoch, evaluate
 import os
 import time
 import numpy as np
@@ -25,30 +29,61 @@ import seaborn as sns
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Device utilise : {device}")
 
+import os
+import matplotlib.pyplot as plt
+from PIL import Image
+
 TRAIN_DIR = "melanoma-cancer-dataset/train"
-
-# os.listdir() retourne la liste des elements dans un dossier
 classes = sorted(os.listdir(TRAIN_DIR))
-num_classes = len(classes)
-print(f"Nombre de classes : {num_classes}")
-print(f"Classes : {classes}")
 
-# Compter les images par classe
+# --- 1. Préparation des données et dictionnaire counts ---
+counts = {}
 for classe in classes:
     chemin_classe = os.path.join(TRAIN_DIR, classe)
-    nb_images = len(os.listdir(chemin_classe))
-    print(f" {classe} : {nb_images} images")
+    # On compte uniquement les fichiers (pour éviter de compter des dossiers cachés)
+    nb_images = len([f for f in os.listdir(chemin_classe) if os.path.isfile(os.path.join(chemin_classe, f))])
+    counts[classe] = nb_images
 
-# Charger une image (adaptez le chemin)
-chemin = os.path.join(TRAIN_DIR, "Benign", os.listdir(os.path.join(TRAIN_DIR, "Benign"))
-[0])
-img_pil = Image.open(chemin).convert("RGB")
-print(f"Taille originale (PIL) : {img_pil.size}") # format PIL : (largeur, hauteur)
-print(f"Type des pixels PIL : {type(img_pil.getpixel((0,0)))}") # tuple d’entiers 0-255
+# --- 2. Affichage de la grille d'images (2 par classe) ---
+num_classes = len(classes)
+fig_img, axes = plt.subplots(num_classes, 2, figsize=(10, 4 * num_classes))
 
-# Convertir en tenseur PyTorch
+for i, classe in enumerate(classes):
+    chemin_classe = os.path.join(TRAIN_DIR, classe)
+    # On récupère les noms des fichiers images
+    images_liste = os.listdir(chemin_classe)
+    
+    for j in range(2):
+        img_path = os.path.join(chemin_classe, images_liste[j])
+        img = Image.open(img_path)
+        
+        # Gestion du cas où il n'y aurait qu'une seule classe (axes serait 1D)
+        ax = axes[i, j] if num_classes > 1 else axes[j]
+        
+        ax.imshow(img)
+        ax.set_title(f"Label: {classe}")
+        ax.axis('off')
+
+plt.tight_layout()
+plt.show()
+
+# --- 3. Affichage du diagramme en barres ---
+plt.figure(figsize=(8, 6))
+plt.bar(counts.keys(), counts.values(), color=['skyblue', 'salmon'])
+
+# Ajout des labels et du titre
+plt.xlabel("Classes de mélanome")
+plt.ylabel("Nombre d'images")
+plt.title("Distribution des classes dans le dataset d'entraînement")
+
+# Optionnel : ajouter le nombre exact au-dessus de chaque barre
+for i, v in enumerate(counts.values()):
+    plt.text(i, v + 5, str(v), ha='center', fontweight='bold')
+
+plt.show()
+
 to_tensor = transforms.ToTensor()
-img_tensor = to_tensor(img_pil)
+img_tensor = to_tensor(img)
 
 print(f"Forme du tenseur : {img_tensor.shape}") # [C, H, W]
 print(f"Valeur min : {img_tensor.min():.4f}")
@@ -58,5 +93,122 @@ plt.subplot(141); plt.title("Image originale"); plt.imshow(img_tensor.permute(1,
 plt.subplot(142); plt.title("Canal R"); plt.imshow(img_tensor[0].numpy(), cmap='Reds')
 plt.subplot(143); plt.title("Canal G"); plt.imshow(img_tensor[1].numpy(), cmap='Greens')
 plt.subplot(144); plt.title("Canal B"); plt.imshow(img_tensor[2].numpy(), cmap='Blues')
-plt.suptitle("Canaux RGB séparés du tenseur de la forme [3, 224, 224]")
+plt.suptitle(f"Canaux RGB séparés du tenseur de la forme : {img_tensor.shape} ")
+plt.show()
+
+transform_base = transforms.Compose([
+    transforms.ToTensor(),         # Convertit les pixels (0-255) en tenseurs (0.0-1.0)
+])
+
+train_dataset = MelonaDataset("melanoma-cancer-dataset/train", transform=transform_base)
+val_dataset = MelonaDataset("melanoma-cancer-dataset/test", transform=transform_base)
+
+print(f"Taille du train set : {len(train_dataset)}")
+print(f"Taille du val set : {len(val_dataset)}")
+print(f"Classes : {train_dataset.classes}")
+print(f"Mapping classe->entier : {train_dataset.class_to_idx}")
+
+# Creer les DataLoaders
+train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=6)
+val_loader = DataLoader(val_dataset, batch_size=128, shuffle=False, num_workers=6)
+
+# Verifier la forme d’un batch
+images_batch, labels_batch = next(iter(train_loader))
+print(f"Forme d’un batch d’images : {images_batch.shape}")
+# Attendu : [32/64, 3, 224, 224]
+print(f"Forme des labels : {labels_batch.shape}")
+# Attendu : [32] ou [64]
+
+fig, axes = plt.subplots(2, 4, figsize=(15, 8))
+axes = axes.flatten()  # On aplatit la grille pour boucler facilement de 0 à 7
+
+for i in range(8):
+    # Transformation du tenseur pour l'affichage
+    # .permute(1,2,0) passe de (3, 224, 224) à (224, 224, 3)
+    img_display = images_batch[i].permute(1, 2, 0).numpy()
+    
+    # Récupération du nom de la classe
+    class_name = train_dataset.classes[labels_batch[i].item()]
+    
+    # Affichage
+    axes[i].imshow(img_display)
+    axes[i].set_title(class_name)
+    axes[i].axis('off')
+
+plt.tight_layout()
+plt.show()
+
+val_images_batch, val_labels_batch = next(iter(val_loader))
+
+fig, axes = plt.subplots(2, 4, figsize=(15, 8))
+axes = axes.flatten()  # On aplatit la grille pour boucler facilement de 0 à 7
+
+for i in range(8):
+    # Transformation du tenseur pour l'affichage
+    # .permute(1,2,0) passe de (3, 224, 224) à (224, 224, 3)
+    val_img_display = val_images_batch[i].permute(1, 2, 0).numpy()
+    
+    # Récupération du nom de la classe
+    class_name = val_dataset.classes[val_labels_batch[i].item()]
+    
+    # Affichage
+    axes[i].imshow(val_img_display)
+    axes[i].set_title(class_name)
+    axes[i].axis('off')
+
+plt.tight_layout()
+plt.show()
+
+model = SimpleCNN(num_classes=num_classes).to(device)
+
+# On affiche le résultat ici
+compter_parametres(model)
+
+# SGD classique
+#optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+# Adam (recommande pour commencer)
+optimizer = optim.Adam(model.parameters(), lr=1e-3)
+
+NUM_EPOCHS = 20
+
+# Critere de loss et optimiseur
+criterion = nn.CrossEntropyLoss()
+
+# Historique pour les courbes
+history = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []}
+
+# --- Benchmark du temps de chargement vs num_workers ---
+workers_to_test = range(0, 15) # 0, 1, 2, ..., 8
+times_per_epoch = []
+
+print("\n--- Début du Benchmark num_workers ---")
+
+for nw in workers_to_test:
+    # On recrée un DataLoader avec le nouveau nombre de workers
+    test_loader = DataLoader(
+        train_dataset, 
+        batch_size=64, 
+        shuffle=True, 
+        num_workers=nw,
+    )
+    
+    t_start = time.time()
+    
+    # On simule une époque (on parcourt tout le loader)
+    # On n'entraîne pas vraiment pour gagner du temps, on mesure juste le flux
+    for i, (imgs, lbls) in enumerate(test_loader):
+        if i > 100: break # Optionnel : tester sur 50 batchs suffit pour voir la tendance
+        imgs, lbls = imgs.to(device), lbls.to(device)
+    
+    duree = time.time() - t_start
+    times_per_epoch.append(duree)
+    print(f"num_workers = {nw} | Temps : {duree:.2f}s")
+
+# --- Affichage de la courbe ---
+plt.figure(figsize=(10, 6))
+plt.plot(workers_to_test, times_per_epoch, marker='o', linestyle='-', color='forestgreen')
+plt.title("Impact du nombre de Workers sur le temps d'une époque")
+plt.xlabel("Valeur de num_workers")
+plt.ylabel("Temps (secondes)")
+plt.grid(True, alpha=0.3)
 plt.show()

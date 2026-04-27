@@ -1,9 +1,9 @@
 from dataset import MelonaDataset
-#from transforms import transform_base, transform_normalise, MEAN, STD
+from transforms import transform_base, transform_normalise
+from function import calculer_mean_std, entrainement, comparer_images
 from model import SimpleCNN, compter_parametres
-from train import train_one_epoch, evaluate
 import os
-import time
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -22,6 +22,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 from sklearn.metrics import confusion_matrix
 import seaborn as sns
+
+MEAN = [0.7228240966796875, 0.5555058717727661, 0.5389671325683594]
+STD = [0.18855655193328857, 0.19735924899578094, 0.21101026237010956]
 
 # --------------------------------------------------
 # Configuration du device (GPU si disponible)
@@ -109,8 +112,8 @@ print(f"Classes : {train_dataset.classes}")
 print(f"Mapping classe->entier : {train_dataset.class_to_idx}")
 
 # Creer les DataLoaders
-train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=1)
-val_loader = DataLoader(val_dataset, batch_size=128, shuffle=False, num_workers=1)
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=7)
+val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=7)
 
 # Verifier la forme d’un batch
 images_batch, labels_batch = next(iter(train_loader))
@@ -165,51 +168,35 @@ model = SimpleCNN(num_classes=num_classes).to(device)
 compter_parametres(model)
 
 # SGD classique
-optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+#optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
 # Adam (recommande pour commencer)
-#optimizer = optim.Adam(model.parameters(), lr=1e-3)
+optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
 NUM_EPOCHS = 20
 
 # Critere de loss et optimiseur
 criterion = nn.CrossEntropyLoss()
 
-# Historique pour les courbes
-history = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []}
+#entrainement(NUM_EPOCHS, optimizer, model, train_loader, val_loader, criterion, device)
 
-for epoch in range(1, NUM_EPOCHS + 1):
-    t0 = time.time()
-    train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer,
-    device)
-    val_loss, val_acc = evaluate(model, val_loader, criterion, device)
-    duree = time.time() - t0
+# Dataset sans normalisation pour calculer les stats (images deja en 224x224)
+dataset_stats = MelonaDataset("melanoma-cancer-dataset/train", transform=transforms.
+    ToTensor())
+#MEAN, STD = calculer_mean_std(dataset_stats) on calcule une seule fois 
 
-    history["train_loss"].append(train_loss)
-    history["val_loss"].append(val_loss)
-    history["train_acc"].append(train_acc)
-    history["val_acc"].append(val_acc)
+train_dataset_norm = MelonaDataset("melanoma-cancer-dataset/train", transform=
+    transform_normalise)
+val_dataset_norm = MelonaDataset("melanoma-cancer-dataset/test", transform=
+    transform_normalise)
 
-    print(f"Epoch {epoch:3d}/{NUM_EPOCHS} | "
-        f"Loss train {train_loss:.4f} | Loss val {val_loss:.4f} | "
-        f"Acc train {train_acc:.3f} | Acc val {val_acc:.3f} | "
-        f"{duree:.1f}s")
-    
-def tracer_courbes(history, titre="CNN simple", save_name="courbes_cnn_simple.png"):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+train_loader_norm = DataLoader(train_dataset_norm, batch_size=64, shuffle=True,
+    num_workers=0)
+val_loader_norm = DataLoader(val_dataset_norm, batch_size=64, shuffle=False, num_workers
+    =0)
 
-    epochs = range(1, len(history["train_loss"]) + 1)
+# 1. Chargement des deux versions
+img_base, label = train_dataset[0]
+img_norm, _ = train_dataset_norm[0]
 
-    ax1.plot(epochs, history["train_loss"], label="Train", color='steelblue')
-    ax1.plot(epochs, history["val_loss"], label="Validation", color='tomato')
-    ax1.set_xlabel("Epoch"); ax1.set_ylabel("Loss")
-    ax1.set_title(f"Loss -- {titre}"); ax1.legend(); ax1.grid(alpha=0.3)
-    ax2.plot(epochs, history["train_acc"], label="Train", color='steelblue')
-    ax2.plot(epochs, history["val_acc"], label="Validation", color='tomato')
-    ax2.set_xlabel("Epoch"); ax2.set_ylabel("Accuracy")
-    ax2.set_title(f"Accuracy -- {titre}"); ax2.legend(); ax2.grid(alpha=0.3)
-    ax2.set_ylim(0, 1)
-    plt.tight_layout()
-    plt.savefig(save_name, dpi=150)
-    plt.show()
+comparer_images(img_base, img_norm)
 
-tracer_courbes(history, titre="CNN simple")
