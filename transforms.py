@@ -13,3 +13,17 @@ transform_normalise = transforms.Compose([
     transforms.Normalize(mean=MEAN, std=STD)
 ])
 
+train_transform_aug = transforms.Compose([
+    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.RandomRotation(degrees=10),
+    transforms.ColorJitter(brightness=0.2, contrast=0.2),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=MEAN, std=STD)
+])
+
+# La validation : pas d’augmentation
+val_transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize(mean=MEAN, std=STD)
+])
+

@@ -1,4 +1,5 @@
 from torch.utils.data import Dataset, DataLoader
+import torch.optim as optim
 import torch
 import matplotlib.pyplot as plt
 import time
@@ -92,3 +93,34 @@ def comparer_images(I1, I2):
     plt.axis('off')
 
     plt.show()
+
+def entrainement_sched(NUM_EPOCHS, model, train_loader, val_loader, criterion, device):
+    # Historique pour les courbes
+    history = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": [], "lrs": []}
+
+    optimizer_sched = optim.Adam(model.parameters(), lr=1e-3)
+
+    # Diviser le lr par 10 toutes les 7 epochs
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer_sched, step_size=7, gamma=0.1)
+
+    for epoch in range(1, NUM_EPOCHS + 1):
+        t0 = time.time()
+        train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer_sched,
+        device)
+        val_loss, val_acc = evaluate(model, val_loader, criterion, device)
+        duree = time.time() - t0
+
+        history["train_loss"].append(train_loss)
+        history["val_loss"].append(val_loss)
+        history["train_acc"].append(train_acc)
+        history["val_acc"].append(val_acc)
+        history["lrs"].append(optimizer_sched.param_groups[0]['lr'])
+
+        scheduler.step() # IMPORTANT : apres chaque epoch
+
+        print(f"Epoch {epoch:3d}/{NUM_EPOCHS} | "
+            f"Loss train {train_loss:.4f} | Loss val {val_loss:.4f} | "
+            f"Acc train {train_acc:.3f} | Acc val {val_acc:.3f} | "
+            f"Learning rate {optimizer_sched.param_groups[0]['lr']:.4f} |"
+            f"{duree:.1f}s")
+    tracer_courbes(history, titre="CNN simple")

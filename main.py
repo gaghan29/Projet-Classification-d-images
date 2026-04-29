@@ -1,6 +1,6 @@
 from dataset import MelonaDataset
-from transforms import transform_base, transform_normalise
-from function import calculer_mean_std, entrainement, comparer_images
+from transforms import transform_base, transform_normalise, train_transform_aug, val_transform
+from function import calculer_mean_std, entrainement, comparer_images, denormalize, entrainement_sched
 from model import SimpleCNN, compter_parametres
 import os
 
@@ -168,9 +168,9 @@ model = SimpleCNN(num_classes=num_classes).to(device)
 compter_parametres(model)
 
 # SGD classique
-#optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+#optimizer = optim.SGD(model.parameters(), lr=1e-2, momentum=0.9)
 # Adam (recommande pour commencer)
-optimizer = optim.Adam(model.parameters(), lr=1e-3)
+optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
 NUM_EPOCHS = 20
 
@@ -190,9 +190,9 @@ val_dataset_norm = MelonaDataset("melanoma-cancer-dataset/test", transform=
     transform_normalise)
 
 train_loader_norm = DataLoader(train_dataset_norm, batch_size=64, shuffle=True,
-    num_workers=0)
+    num_workers=7)
 val_loader_norm = DataLoader(val_dataset_norm, batch_size=64, shuffle=False, num_workers
-    =0)
+    =7)
 
 # 1. Chargement des deux versions
 img_base, label = train_dataset[0]
@@ -200,3 +200,49 @@ img_norm, _ = train_dataset_norm[0]
 
 comparer_images(img_base, img_norm)
 
+#entrainement(NUM_EPOCHS, optimizer, model, train_loader_norm, val_loader_norm, criterion, device)
+
+train_dataset_aug = MelonaDataset("melanoma-cancer-dataset/train", transform=
+    train_transform_aug)
+val_dataset_aug = MelonaDataset("melanoma-cancer-dataset/test", transform=val_transform)
+
+train_loader_aug = DataLoader(train_dataset_aug, batch_size=64, shuffle=True,
+    num_workers=7)
+val_loader_aug = DataLoader(val_dataset_aug, batch_size=64, shuffle=False, num_workers
+    =7)
+
+entrainement(NUM_EPOCHS, optimizer, model, train_loader_aug, val_loader_aug, criterion, device)
+
+# --- Affichage de l'Augmentation de Données ---
+
+# 1. Charger une image PIL brute
+img_path = os.path.join(TRAIN_DIR, classes[0], os.listdir(os.path.join(TRAIN_DIR, classes[0]))[0])
+img_pil = Image.open(img_path).convert('RGB')
+
+# 2. Préparer la grille
+fig, axes = plt.subplots(2, 4, figsize=(16, 8))
+axes = axes.flatten()
+
+# Affichage de l'originale sur le premier slot
+axes[0].imshow(img_pil)
+axes[0].set_title("Originale (PIL)")
+axes[0].axis('off')
+
+# 3. Appliquer la transformation 7 fois
+for i in range(1, 8):
+    # Applique RandomFlip, Rotation, Jitter, Tensor, Normalize
+    img_aug_tensor = train_transform_aug(img_pil)
+    
+    # Retour au format [0, 1] pour matplotlib
+    img_aug_visu = denormalize(img_aug_tensor, MEAN, STD)
+    
+    # Passage en numpy [H, W, C]
+    img_aug_np = img_aug_visu.permute(1, 2, 0).numpy()
+    
+    axes[i].imshow(np.clip(img_aug_np, 0, 1))
+    axes[i].set_title(f"Augmentation v{i}")
+    axes[i].axis('off')
+
+plt.tight_layout()
+plt.suptitle("Visualisation des transformations aléatoires (Augmentation)", fontsize=16)
+plt.show()
