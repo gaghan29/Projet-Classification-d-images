@@ -27,7 +27,8 @@ def calculer_mean_std(dataset):
     return mean.tolist(), std.tolist()
 
 def tracer_courbes(history, titre="CNN simple", save_name="courbes_cnn_simple.png"):
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        ax1, ax2, ax3, ax4 = axes.flatten()
 
         epochs = range(1, len(history["train_loss"]) + 1)
 
@@ -40,6 +41,11 @@ def tracer_courbes(history, titre="CNN simple", save_name="courbes_cnn_simple.pn
         ax2.set_xlabel("Epoch"); ax2.set_ylabel("Accuracy")
         ax2.set_title(f"Accuracy -- {titre}"); ax2.legend(); ax2.grid(alpha=0.3)
         ax2.set_ylim(0, 1)
+        ax3.plot(epochs, history["lrs"], label="Learning rate", color='steelblue')
+        ax3.set_yscale('log')
+        ax3.set_xlabel("Epoch"); ax3.set_ylabel("Learning rate")
+        ax3.set_title(f"Learning rate -- {titre}"); ax3.legend(); ax3.grid(alpha=0.3)
+        ax4.axis('off')
         plt.tight_layout()
         plt.savefig(save_name, dpi=150)
         plt.show()
@@ -121,6 +127,6 @@ def entrainement_sched(NUM_EPOCHS, model, train_loader, val_loader, criterion, d
         print(f"Epoch {epoch:3d}/{NUM_EPOCHS} | "
             f"Loss train {train_loss:.4f} | Loss val {val_loss:.4f} | "
             f"Acc train {train_acc:.3f} | Acc val {val_acc:.3f} | "
-            f"Learning rate {optimizer_sched.param_groups[0]['lr']:.4f} |"
+            f"Learning rate {optimizer_sched.param_groups[0]['lr']:.5f} |"
             f"{duree:.1f}s")
     tracer_courbes(history, titre="CNN simple")

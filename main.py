@@ -170,7 +170,7 @@ compter_parametres(model)
 # SGD classique
 #optimizer = optim.SGD(model.parameters(), lr=1e-2, momentum=0.9)
 # Adam (recommande pour commencer)
-optimizer = optim.Adam(model.parameters(), lr=1e-4)
+optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
 NUM_EPOCHS = 20
 
@@ -211,7 +211,7 @@ train_loader_aug = DataLoader(train_dataset_aug, batch_size=64, shuffle=True,
 val_loader_aug = DataLoader(val_dataset_aug, batch_size=64, shuffle=False, num_workers
     =7)
 
-entrainement(NUM_EPOCHS, optimizer, model, train_loader_aug, val_loader_aug, criterion, device)
+entrainement_sched(NUM_EPOCHS, model, train_loader_aug, val_loader_aug, criterion, device)
 
 # --- Affichage de l'Augmentation de Données ---
 
