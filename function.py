@@ -2,7 +2,10 @@ from torch.utils.data import Dataset, DataLoader
 import torch.optim as optim
 import torch
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, classification_report
+import seaborn as sns
 import time
+import numpy as np
 from train import train_one_epoch, evaluate
 
 MEAN = [0.7228240966796875, 0.5555058717727661, 0.5389671325683594]
@@ -26,7 +29,25 @@ def calculer_mean_std(dataset):
     print(f"Std : {std}")
     return mean.tolist(), std.tolist()
 
-def tracer_courbes(history, titre="CNN simple", save_name="courbes_cnn_simple.png"):
+def tracer_courbes_cnn(history, titre="CNN simple", save_name="courbes_cnn_simple.png"):
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+
+        epochs = range(1, len(history["train_loss"]) + 1)
+
+        ax1.plot(epochs, history["train_loss"], label="Train", color='steelblue')
+        ax1.plot(epochs, history["val_loss"], label="Validation", color='tomato')
+        ax1.set_xlabel("Epoch"); ax1.set_ylabel("Loss")
+        ax1.set_title(f"Loss -- {titre}"); ax1.legend(); ax1.grid(alpha=0.3)
+        ax2.plot(epochs, history["train_acc"], label="Train", color='steelblue')
+        ax2.plot(epochs, history["val_acc"], label="Validation", color='tomato')
+        ax2.set_xlabel("Epoch"); ax2.set_ylabel("Accuracy")
+        ax2.set_title(f"Accuracy -- {titre}"); ax2.legend(); ax2.grid(alpha=0.3)
+        ax2.set_ylim(0, 1)
+        plt.tight_layout()
+        plt.savefig(save_name, dpi=150)
+        plt.show()
+
+def tracer_courbes_lr(history, titre="CNN simple", save_name="courbes_cnn_simple.png"):
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
         ax1, ax2, ax3, ax4 = axes.flatten()
 
@@ -50,8 +71,26 @@ def tracer_courbes(history, titre="CNN simple", save_name="courbes_cnn_simple.pn
         plt.savefig(save_name, dpi=150)
         plt.show()
 
+def tracer_courbes_resnet(history, titre="ResNet18", save_name="courbes_resnet18.png"):
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
 
-def entrainement(NUM_EPOCHS, optimizer, model, train_loader, val_loader, criterion, device):
+        epochs = range(1, len(history["train_loss"]) + 1)
+
+        ax1.plot(epochs, history["train_loss"], label="Train", color='steelblue')
+        ax1.plot(epochs, history["val_loss"], label="Validation", color='tomato')
+        ax1.set_xlabel("Epoch"); ax1.set_ylabel("Loss")
+        ax1.set_title(f"Loss -- {titre}"); ax1.legend(); ax1.grid(alpha=0.3)
+        ax2.plot(epochs, history["train_acc"], label="Train", color='steelblue')
+        ax2.plot(epochs, history["val_acc"], label="Validation", color='tomato')
+        ax2.set_xlabel("Epoch"); ax2.set_ylabel("Accuracy")
+        ax2.set_title(f"Accuracy -- {titre}"); ax2.legend(); ax2.grid(alpha=0.3)
+        ax2.set_ylim(0, 1)
+        plt.tight_layout()
+        plt.savefig(save_name, dpi=150)
+        plt.show()
+
+
+def entrainement_cnn(NUM_EPOCHS, optimizer, model, train_loader, val_loader, criterion, device):
     # Historique pour les courbes
     history = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []}
 
@@ -71,7 +110,8 @@ def entrainement(NUM_EPOCHS, optimizer, model, train_loader, val_loader, criteri
             f"Loss train {train_loss:.4f} | Loss val {val_loss:.4f} | "
             f"Acc train {train_acc:.3f} | Acc val {val_acc:.3f} | "
             f"{duree:.1f}s")
-    tracer_courbes(history, titre="CNN simple")
+    #tracer_courbes_cnn(history, titre="CNN simple")
+    return history
 
 # Fonction pour dé-normaliser (remettre en [0, 1])
 def denormalize(tensor, mean, std):
@@ -129,4 +169,98 @@ def entrainement_sched(NUM_EPOCHS, model, train_loader, val_loader, criterion, d
             f"Acc train {train_acc:.3f} | Acc val {val_acc:.3f} | "
             f"Learning rate {optimizer_sched.param_groups[0]['lr']:.5f} |"
             f"{duree:.1f}s")
-    tracer_courbes(history, titre="CNN simple")
+    tracer_courbes_lr(history, titre="CNN simple")
+
+def entrainement_resnet(NUM_EPOCHS, optimizer, model, train_loader, val_loader, criterion, device):
+    # Historique pour les courbes
+    history = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []}
+
+    for epoch in range(1, NUM_EPOCHS + 1):
+        t0 = time.time()
+        train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer,
+        device)
+        val_loss, val_acc = evaluate(model, val_loader, criterion, device)
+        duree = time.time() - t0
+
+        history["train_loss"].append(train_loss)
+        history["val_loss"].append(val_loss)
+        history["train_acc"].append(train_acc)
+        history["val_acc"].append(val_acc)
+
+        print(f"Epoch {epoch:3d}/{NUM_EPOCHS} | "
+            f"Loss train {train_loss:.4f} | Loss val {val_loss:.4f} | "
+            f"Acc train {train_acc:.3f} | Acc val {val_acc:.3f} | "
+            f"{duree:.1f}s")
+    #tracer_courbes_resnet(history, titre="ResNet18")
+    return history
+
+def evaluer_modele_detail(model, loader, device, classes):
+    all_preds = []
+    all_labels = []
+    
+    model.eval() # Mode évaluation obligatoire
+    with torch.no_grad():
+        for images, labels in loader:
+            images = images.to(device)
+            outputs = model(images)
+            
+            # On récupère l'indice de la classe la plus probable
+            preds = outputs.argmax(dim=1)
+            
+            # On stocke (on ramène sur CPU et on convertit en numpy)
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+            
+    return np.array(all_labels), np.array(all_preds)
+
+def afficher_metrics(y_true, y_pred, classes):
+    # 1. Rapport de classification
+    print("\n--- Rapport de Classification ---")
+    print(classification_report(y_true, y_pred, target_names=classes))
+
+    # 2. Matrice de confusion
+    cm = confusion_matrix(y_true, y_pred)
+    
+    plt.figure(figsize=(10, 8))
+    # On utilise seaborn pour avoir les annotations (nombres) automatiquement
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                xticklabels=classes, yticklabels=classes)
+    
+    plt.title('Matrice de Confusion')
+    plt.ylabel('Vrais Labels')
+    plt.xlabel('Prédictions')
+    plt.tight_layout()
+    plt.show()
+
+def comparer_trois_modeles(hist_cnn, hist_res_gele, hist_res_ft, save_name="comparaison_finale.png"):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    
+    # Configuration des modèles
+    modeles = [
+        (hist_cnn, "SGD", "tab:blue"),
+        (hist_res_gele, "Adam, lr=1e-3", "tab:orange"),
+        (hist_res_ft, "Adam lr=1e-4", "tab:green")
+    ]
+
+    for hist, nom, couleur in modeles:
+        epochs = range(1, len(hist["train_loss"]) + 1)
+        
+        # Courbes de Loss (Validation uniquement pour la clarté)
+        ax1.plot(epochs, hist["val_loss"], label=f"{nom} (val)", color=couleur, linewidth=2)
+        # Courbes d'Accuracy (Validation)
+        ax2.plot(epochs, hist["val_acc"], label=f"{nom} (val)", color=couleur, linewidth=2)
+
+    # Esthétique Loss
+    ax1.set_title("Comparaison de la Loss de Validation")
+    ax1.set_xlabel("Epochs"); ax1.set_ylabel("Loss")
+    ax1.legend(); ax1.grid(alpha=0.3)
+
+    # Esthétique Accuracy
+    ax2.set_title("Comparaison de l'Accuracy de Validation")
+    ax2.set_xlabel("Epochs"); ax2.set_ylabel("Accuracy")
+    ax2.set_ylim(0.5, 1) # On zoom sur la zone intéressante
+    ax2.legend(); ax2.grid(alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(save_name, dpi=150)
+    plt.show()

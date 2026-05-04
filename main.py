@@ -1,7 +1,7 @@
 from dataset import MelonaDataset
 from transforms import transform_base, transform_normalise, train_transform_aug, val_transform
-from function import calculer_mean_std, entrainement, comparer_images, denormalize, entrainement_sched
-from model import SimpleCNN, compter_parametres
+from function import calculer_mean_std, entrainement_cnn, comparer_images, denormalize, entrainement_sched, entrainement_resnet, evaluer_modele_detail, afficher_metrics, comparer_trois_modeles
+from model import SimpleCNN, ResNet, ResNet_FT, compter_parametres
 import os
 
 import numpy as np
@@ -49,14 +49,14 @@ for classe in classes:
 
 # --- 2. Affichage de la grille d'images (2 par classe) ---
 num_classes = len(classes)
-fig_img, axes = plt.subplots(num_classes, 2, figsize=(10, 4 * num_classes))
+fig_img, axes = plt.subplots(num_classes, 6, figsize=(10, 4 * num_classes))
 
 for i, classe in enumerate(classes):
     chemin_classe = os.path.join(TRAIN_DIR, classe)
     # On récupère les noms des fichiers images
     images_liste = os.listdir(chemin_classe)
     
-    for j in range(2):
+    for j in range(6):
         img_path = os.path.join(chemin_classe, images_liste[j])
         img = Image.open(img_path)
         
@@ -68,6 +68,7 @@ for i, classe in enumerate(classes):
         ax.axis('off')
 
 plt.tight_layout()
+plt.suptitle("Visualisation du dataset")
 plt.show()
 
 # --- 3. Affichage du diagramme en barres ---
@@ -92,16 +93,13 @@ print(f"Forme du tenseur : {img_tensor.shape}") # [C, H, W]
 print(f"Valeur min : {img_tensor.min():.4f}")
 print(f"Valeur max : {img_tensor.max():.4f}")
 
-plt.subplot(141); plt.title("Image originale"); plt.imshow(img_tensor.permute(1, 2, 0).numpy())
-plt.subplot(142); plt.title("Canal R"); plt.imshow(img_tensor[0].numpy(), cmap='Reds')
-plt.subplot(143); plt.title("Canal G"); plt.imshow(img_tensor[1].numpy(), cmap='Greens')
-plt.subplot(144); plt.title("Canal B"); plt.imshow(img_tensor[2].numpy(), cmap='Blues')
+plt.subplot(141); plt.title("Image originale"); plt.imshow(img_tensor.permute(1, 2, 0).numpy()); plt.axis('off')
+plt.subplot(142); plt.title("Canal R"); plt.imshow(img_tensor[0].numpy(), cmap='Reds'); plt.axis('off')
+plt.subplot(143); plt.title("Canal G"); plt.imshow(img_tensor[1].numpy(), cmap='Greens'); plt.axis('off')
+plt.subplot(144); plt.title("Canal B"); plt.imshow(img_tensor[2].numpy(), cmap='Blues'); plt.axis('off')
 plt.suptitle(f"Canaux RGB séparés du tenseur de la forme : {img_tensor.shape} ")
+plt.tight_layout
 plt.show()
-
-transform_base = transforms.Compose([
-    transforms.ToTensor(),         # Convertit les pixels (0-255) en tenseurs (0.0-1.0)
-])
 
 train_dataset = MelonaDataset("melanoma-cancer-dataset/train", transform=transform_base)
 val_dataset = MelonaDataset("melanoma-cancer-dataset/test", transform=transform_base)
@@ -162,37 +160,38 @@ for i in range(8):
 plt.tight_layout()
 plt.show()
 
-model = SimpleCNN(num_classes=num_classes).to(device)
+# -- PARAMETRES -----------------------------------------
 
-# On affiche le résultat ici
-compter_parametres(model)
+#MODEL
+CNN_1 = SimpleCNN(num_classes=num_classes).to(device)
+CNN_2 = SimpleCNN(num_classes=num_classes).to(device)
+CNN_3 = SimpleCNN(num_classes=num_classes).to(device)
+Resnet = ResNet(num_classes=num_classes).to(device)
+Resnet_FT = ResNet_FT(num_classes=num_classes).to(device)
+#compter_parametres(model)
 
-# SGD classique
-#optimizer = optim.SGD(model.parameters(), lr=1e-2, momentum=0.9)
-# Adam (recommande pour commencer)
-optimizer = optim.Adam(model.parameters(), lr=1e-3)
+# OPTIMIZER
+optimizer_1 = optim.SGD(CNN_1.parameters(), lr=1e-2, momentum=0.9)
+optimizer_2 = optim.Adam(CNN_2.parameters(), lr=1e-3)
+optimizer_3 = optim.Adam(CNN_3.parameters(), lr=1e-4)
+#optimizer_FT = optim.Adam(Resnet_FT.get_optimizer_params())
 
 NUM_EPOCHS = 20
-
 # Critere de loss et optimiseur
 criterion = nn.CrossEntropyLoss()
+ # ------------------------------------------------------
 
 #entrainement(NUM_EPOCHS, optimizer, model, train_loader, val_loader, criterion, device)
 
 # Dataset sans normalisation pour calculer les stats (images deja en 224x224)
-dataset_stats = MelonaDataset("melanoma-cancer-dataset/train", transform=transforms.
-    ToTensor())
+dataset_stats = MelonaDataset("melanoma-cancer-dataset/train", transform=transforms.ToTensor())
 #MEAN, STD = calculer_mean_std(dataset_stats) on calcule une seule fois 
 
-train_dataset_norm = MelonaDataset("melanoma-cancer-dataset/train", transform=
-    transform_normalise)
-val_dataset_norm = MelonaDataset("melanoma-cancer-dataset/test", transform=
-    transform_normalise)
+train_dataset_norm = MelonaDataset("melanoma-cancer-dataset/train", transform=transform_normalise)
+val_dataset_norm = MelonaDataset("melanoma-cancer-dataset/test", transform=transform_normalise)
 
-train_loader_norm = DataLoader(train_dataset_norm, batch_size=64, shuffle=True,
-    num_workers=7)
-val_loader_norm = DataLoader(val_dataset_norm, batch_size=64, shuffle=False, num_workers
-    =7)
+train_loader_norm = DataLoader(train_dataset_norm, batch_size=64, shuffle=True, num_workers=7)
+val_loader_norm = DataLoader(val_dataset_norm, batch_size=64, shuffle=False, num_workers=7)
 
 # 1. Chargement des deux versions
 img_base, label = train_dataset[0]
@@ -202,18 +201,16 @@ comparer_images(img_base, img_norm)
 
 #entrainement(NUM_EPOCHS, optimizer, model, train_loader_norm, val_loader_norm, criterion, device)
 
-train_dataset_aug = MelonaDataset("melanoma-cancer-dataset/train", transform=
-    train_transform_aug)
+train_dataset_aug = MelonaDataset("melanoma-cancer-dataset/train", transform=train_transform_aug)
 val_dataset_aug = MelonaDataset("melanoma-cancer-dataset/test", transform=val_transform)
 
-train_loader_aug = DataLoader(train_dataset_aug, batch_size=64, shuffle=True,
-    num_workers=7)
-val_loader_aug = DataLoader(val_dataset_aug, batch_size=64, shuffle=False, num_workers
-    =7)
+train_loader_aug = DataLoader(train_dataset_aug, batch_size=64, shuffle=True, num_workers=7)
+val_loader_aug = DataLoader(val_dataset_aug, batch_size=64, shuffle=False, num_workers=7)
 
-entrainement_sched(NUM_EPOCHS, model, train_loader_aug, val_loader_aug, criterion, device)
-
-# --- Affichage de l'Augmentation de Données ---
+history_1 = entrainement_cnn(NUM_EPOCHS, optimizer_1, CNN_1, train_loader_aug, val_loader_aug, criterion, device)
+history_2 = entrainement_cnn(NUM_EPOCHS, optimizer_2, CNN_2, train_loader_aug, val_loader_aug, criterion, device)
+history_3 = entrainement_cnn(NUM_EPOCHS, optimizer_3, CNN_3, train_loader_aug, val_loader_aug, criterion, device)
+#entrainement_sched(NUM_EPOCHS, model, train_loader_aug, val_loader_aug, criterion, device)
 
 # 1. Charger une image PIL brute
 img_path = os.path.join(TRAIN_DIR, classes[0], os.listdir(os.path.join(TRAIN_DIR, classes[0]))[0])
@@ -246,3 +243,14 @@ for i in range(1, 8):
 plt.tight_layout()
 plt.suptitle("Visualisation des transformations aléatoires (Augmentation)", fontsize=16)
 plt.show()
+
+#history_resnet = entrainement_resnet(NUM_EPOCHS, optimizer_ResNet, Resnet, train_loader_aug, val_loader_aug, criterion, device)
+#history_resnet_ft = entrainement_resnet(NUM_EPOCHS, optimizer_FT, Resnet_FT, train_loader_aug, val_loader_aug, criterion, device)
+
+# 1. On récupère les données
+y_true, y_pred = evaluer_modele_detail(Resnet_FT, val_loader_aug, device, train_dataset.classes)
+
+# 2. On affiche le bilan
+#afficher_metrics(y_true, y_pred, train_dataset.classes)
+
+comparer_trois_modeles(history_1, history_2, history_3)
